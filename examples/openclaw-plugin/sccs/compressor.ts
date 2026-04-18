@@ -1,5 +1,5 @@
 import { SummaryExtractor } from "./summarizer.js";
-import { extractTextContent, hasRefId, isToolRole, md5Hex, setTextContent } from "./utils.js";
+import { extractTextContent, hasRefId, isStandardToolResultContent, isToolRole, md5Hex, setTextContent } from "./utils.js";
 import type { RefStore } from "./storage.js";
 export type CompressorConfig = {
   compressThreshold: number;
@@ -46,6 +46,11 @@ export async function compressToolMessages(params: {
   for (let i = 0; i < nextMessages.length; i++) {
     const msg = nextMessages[i];
     if (!isToolRole(msg.role)) continue;
+    // Verify message structure before compression (only compress standard text content)
+    if (!isStandardToolResultContent(msg.content)) {
+      logger?.warn?.(`[sccs] skipped tool message #${i}: unexpected content structure`);
+      continue;
+    }
     const text = extractTextContent(msg.content);
     if (!text) continue;
     if (text.length <= config.compressThreshold || hasRefId(text)) continue;

@@ -58,10 +58,50 @@ export function isToolRole(role: unknown): boolean {
   return role === "tool" || role === "toolResult" || role === "tool_result";
 }
 
+/**
+ * Check if message content contains only text blocks (no images, audio, etc.)
+ * Returns false if content is an array with non-text blocks (e.g., image_url)
+ */
+export function isPureTextContent(content: unknown): boolean {
+  if (typeof content === "string" || !content) {
+    return true;
+  }
+  if (!Array.isArray(content)) {
+    return true;
+  }
+  return content.every((block) => {
+    if (!block || typeof block !== "object") {
+      return false;
+    }
+    const blockType = (block as ContentBlock).type;
+    return !blockType || blockType === "text";
+  });
+}
+
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
 export function estimateTokensForMessages(messages: MessageLike[]): number {
   return messages.reduce((sum, msg) => sum + estimateTokens(extractTextContent(msg.content)), 0);
+}
+
+/**
+ * Check if message content matches the standard OpenClaw tool result format:
+ * Array<{ type: "text"; text: string }>
+ * Returns false if structure is unexpected or contains non-text blocks.
+ */
+export function isStandardToolResultContent(content: unknown): boolean {
+  // Reject: null/undefined/非数组/空数组
+  if (!Array.isArray(content) || content.length === 0) {
+    return false;
+  }
+  // Accept: 非空数组，每个块都是 { type: "text", text: string }
+  return content.every((block) => {
+    if (!block || typeof block !== "object") {
+      return false;
+    }
+    const blockObj = block as ContentBlock;
+    return blockObj.type === "text" && typeof blockObj.text === "string";
+  });
 }
