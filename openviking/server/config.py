@@ -3,7 +3,7 @@
 """Server configuration for OpenViking HTTP Server."""
 
 import sys
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -105,6 +105,21 @@ class TempUploadConfig(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class ToolOutputExternalizationConfig(BaseModel):
+    """External storage controls for oversized tool outputs."""
+
+    enabled: bool = True
+    threshold_chars: int = 12_000
+    preview_chars: int = 6_000
+    assistant_turn_inline_budget_chars: int = 24_000
+    assistant_turn_preview_budget_chars: int = 12_000
+    min_preview_chars: int = 1_000
+    aggregate_selection_strategy: Literal["largest_first"] = "largest_first"
+    failure_mode: Literal["reject", "preserve_raw", "preview_only"] = "preserve_raw"
+
+    model_config = {"extra": "forbid"}
+
+
 class ServerConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = 1933
@@ -118,6 +133,9 @@ class ServerConfig(BaseModel):
     api_key_hashing_enabled: bool = False  # Whether API key Argon2id hashing is enabled (default: false, rely on file encryption)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     temp_upload: TempUploadConfig = Field(default_factory=TempUploadConfig)
+    tool_output_externalization: ToolOutputExternalizationConfig = Field(
+        default_factory=ToolOutputExternalizationConfig
+    )
 
     model_config = {"extra": "forbid"}
 

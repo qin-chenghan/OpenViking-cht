@@ -185,6 +185,54 @@ async def test_get_session_context_rejects_negative_token_budget(client: httpx.A
     assert body["error"]["details"] == {"field": "token_budget", "value": -1}
 
 
+async def test_tool_result_externalization_read_and_search(client: httpx.AsyncClient):
+    session_id = "tool-result-api-session"
+    raw = "alpha\n" + ("needle-" * 2200) + "\nomega"
+
+    resp = await client.post(
+        f"/api/v1/sessions/{session_id}/messages",
+        json=_message_request(
+            "user",
+            parts=[
+                {
+                    "type": "tool",
+                    "tool_id": "call_api",
+                    "tool_name": "read_file",
+                    "tool_output": raw,
+                    "tool_status": "completed",
+                }
+            ],
+        ),
+    )
+    assert resp.status_code == 200
+
+    context_resp = await client.get(f"/api/v1/sessions/{session_id}/context")
+    assert context_resp.status_code == 200
+    part = context_resp.json()["result"]["messages"][0]["parts"][0]
+    assert part["tool_output_truncated"] is True
+    assert part["tool_output_ref"].startswith(f"viking://session/{session_id}/tool-results/")
+    assert raw not in part["tool_output"]
+
+    tool_result_id = part["tool_output_ref"].rsplit("/", 1)[-1]
+    read_resp = await client.get(
+        f"/api/v1/sessions/{session_id}/tool-results/{tool_result_id}?offset=0&limit=-1"
+    )
+    assert read_resp.status_code == 200
+    read_body = read_resp.json()["result"]
+    assert read_body["content"] == raw
+    assert read_body["offset_unit"] == "unicode_code_point"
+
+    search_resp = await client.get(
+        f"/api/v1/sessions/{session_id}/tool-results/{tool_result_id}/search",
+        params={"q": "needle", "limit": 1, "context_chars": 5},
+    )
+    assert search_resp.status_code == 200
+    matches = search_resp.json()["result"]["matches"]
+    assert len(matches) == 1
+    assert matches[0]["offset_unit"] == "unicode_code_point"
+    assert "needle" in matches[0]["snippet"]
+
+
 async def test_get_session_context_includes_incomplete_archive_messages(
     client: httpx.AsyncClient, service
 ):
