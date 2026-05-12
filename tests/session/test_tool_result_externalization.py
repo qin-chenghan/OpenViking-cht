@@ -1,9 +1,12 @@
 # Copyright (c) 2026 Beijing Volcano Engine Technology Co., Ltd.
 # SPDX-License-Identifier: AGPL-3.0
 
+import json
+
 from openviking.message import ToolPart
 from openviking.server.config import ToolOutputExternalizationConfig
 from openviking.session import Session
+from openviking.session.tool_result_store import ToolResultStore
 
 
 def _small_config(**overrides):
@@ -129,3 +132,34 @@ async def test_update_tool_part_externalizes_large_output(session_with_tool_call
     assert part.tool_output_ref
     stored = await session.read_tool_result(part.tool_output_ref.rsplit("/", 1)[-1], limit=-1)
     assert stored["content"] == raw
+
+
+async def test_list_tool_results_filters_tool_name_before_limit():
+    class FakeVikingFS:
+        def __init__(self):
+            self.entries = [
+                {"name": "tr_other", "isDir": True},
+                {"name": "tr_target", "isDir": True},
+            ]
+            self.metadata = {
+                "tr_other": {"tool_result_id": "tr_other", "tool_name": "other"},
+                "tr_target": {"tool_result_id": "tr_target", "tool_name": "target"},
+            }
+
+        async def ls(self, uri, *, output, node_limit, ctx):  # noqa: ANN001
+            return self.entries[:node_limit]
+
+        async def read_file(self, uri, *, ctx):  # noqa: ANN001
+            tool_result_id = uri.rstrip("/").split("/")[-2]
+            return json.dumps(self.metadata[tool_result_id])
+
+    store = ToolResultStore(
+        FakeVikingFS(),
+        "viking://session/filter-before-limit",
+        "filter-before-limit",
+        ctx=None,
+    )
+
+    result = await store.list(tool_name="target", limit=1)
+
+    assert result["tool_results"] == [{"tool_result_id": "tr_target", "tool_name": "target"}]
