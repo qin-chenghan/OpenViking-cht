@@ -292,6 +292,7 @@ class Session:
         ctx: Optional[RequestContext] = None,
         session_id: Optional[str] = None,
         auto_commit_threshold: int = 8000,
+        tool_output_externalization_config: Optional[ToolOutputExternalizationConfig] = None,
     ):
         self._viking_fs = viking_fs
         self._vikingdb_manager = vikingdb_manager
@@ -314,7 +315,11 @@ class Session:
             participant_user_ids=[self.ctx.user.user_id],
         )
         self._loaded = False
-        self._tool_output_externalization_config = ToolOutputExternalizationConfig()
+        self._tool_output_externalization_config = (
+            tool_output_externalization_config.model_copy(deep=True)
+            if tool_output_externalization_config is not None
+            else ToolOutputExternalizationConfig()
+        )
 
         logger.info(f"Session created: {self.session_id} for user {self.user}")
 

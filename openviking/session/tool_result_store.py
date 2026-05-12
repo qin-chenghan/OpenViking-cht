@@ -255,11 +255,12 @@ class ToolResultStore:
     async def list(self, *, tool_name: Optional[str] = None, limit: int = 50) -> Dict[str, Any]:
         if limit <= 0:
             raise InvalidArgumentError("limit must be greater than 0")
+        node_limit = max(limit, 100_000) if tool_name else limit
         try:
             entries = await self._viking_fs.ls(
                 self._base_uri(),
                 output="original",
-                node_limit=limit,
+                node_limit=node_limit,
                 ctx=self._ctx,
             )
         except NotFoundError:

@@ -14,7 +14,9 @@ from starlette.requests import Request
 
 from openviking.message import Message
 from openviking.server.api_keys import APIKeyManager
-from openviking.server.config import ServerConfig
+from openviking.server.app import create_app
+from openviking.server.config import ServerConfig, ToolOutputExternalizationConfig
+from openviking.server.dependencies import set_service
 from openviking.server.identity import RequestContext, Role
 from openviking.server.routers import sessions as sessions_router
 from openviking_cli.session.user_id import UserIdentifier
@@ -231,6 +233,45 @@ async def test_tool_result_externalization_read_and_search(client: httpx.AsyncCl
     assert len(matches) == 1
     assert matches[0]["offset_unit"] == "unicode_code_point"
     assert "needle" in matches[0]["snippet"]
+
+
+async def test_tool_result_externalization_respects_server_config_disabled(service):
+    app = create_app(
+        config=ServerConfig(
+            tool_output_externalization=ToolOutputExternalizationConfig(enabled=False)
+        ),
+        service=service,
+    )
+    set_service(service)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        session_id = "tool-result-disabled-session"
+        raw = "disabled-" * 4000
+
+        resp = await client.post(
+            f"/api/v1/sessions/{session_id}/messages",
+            json=_message_request(
+                "user",
+                parts=[
+                    {
+                        "type": "tool",
+                        "tool_id": "call_disabled",
+                        "tool_name": "read_file",
+                        "tool_output": raw,
+                        "tool_status": "completed",
+                    }
+                ],
+            ),
+        )
+        assert resp.status_code == 200
+
+        context_resp = await client.get(f"/api/v1/sessions/{session_id}/context")
+        assert context_resp.status_code == 200
+        part = context_resp.json()["result"]["messages"][0]["parts"][0]
+        assert part["tool_output"] == raw
+        assert "tool_output_ref" not in part
+        assert "tool_output_truncated" not in part
 
 
 async def test_get_session_context_includes_incomplete_archive_messages(
