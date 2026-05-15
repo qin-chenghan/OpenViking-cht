@@ -1120,6 +1120,119 @@ const contextEnginePlugin = {
       { name: "memory_recall" },
     );
 
+    // TODO: 实现工具执行逻辑
+    // - 解析 tool_output_ref URI 格式
+    // - 调用 OpenViking HTTP API 读取完整内容
+    // - 处理错误情况（无效 ref、API 错误等）
+    api.registerTool(
+      (ctx: ToolContext) => ({
+        name: "openviking_tool_result_read",
+        label: "Read Externalized Tool Result",
+        description:
+          "读取被 OpenViking externalized 的 tool result 完整内容。当工具结果被 externalized 时，只能看到 preview（默认 2000 字符）。使用此工具可以获取完整的原始内容。",
+        parameters: Type.Object({
+          tool_output_ref: Type.String({
+            description:
+              "Tool result ref (从 externalized preview 中获取)，格式：viking://session/{session_id}/tool-results/{tool_result_id}",
+          }),
+          offset: Type.Optional(
+            Type.Number({
+              default: 0,
+              description: "起始偏移量（字符数），默认 0",
+            }),
+          ),
+          limit: Type.Optional(
+            Type.Number({
+              default: -1,
+              description: "最大字符数，-1 表示全部读取，默认 -1",
+            }),
+          ),
+        }),
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          if (isBypassedSession(ctx)) {
+            return makeBypassedToolResult("openviking_tool_result_read");
+          }
+          
+          const { tool_output_ref, offset = 0, limit = -1 } = params as {
+            tool_output_ref: string;
+            offset?: number;
+            limit?: number;
+          };
+
+          // 解析 tool_output_ref URI
+          const match = tool_output_ref.match(/^viking:\/\/session\/([^/]+)\/tool-results\/([^/]+)$/);
+          if (!match) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Invalid tool_output_ref format: ${tool_output_ref}. Expected format: viking://session/{session_id}/tool-results/{tool_result_id}`,
+                },
+              ],
+            };
+          }
+
+          const [, sessionId, toolResultId] = match;
+
+          try {
+            const client = await getClient();
+            const result = await client.readToolResult(
+              sessionId,
+              toolResultId,
+              {
+                offset: typeof offset === "number" ? offset : 0,
+                limit: typeof limit === "number" ? limit : -1,
+                includeMetadata: true,
+              }
+            );
+
+            const metadataSummary = result.metadata
+              ? `\n\nMetadata: ${JSON.stringify(result.metadata, null, 2)}`
+              : "";
+
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: result.content + metadataSummary,
+                },
+              ],
+              details: {
+                tool_result_id: result.tool_result_id,
+                offset: result.offset,
+                limit: result.limit,
+                offset_unit: result.offset_unit,
+                total_chars: result.total_chars,
+                has_more: result.has_more,
+                metadata: result.metadata,
+              },
+            };
+          } catch (error) {
+            const errorMessage =
+              error instanceof Error
+                ? error.message
+                : String(error);
+            api.logger.warn(
+              `openviking_tool_result_read failed: ${errorMessage}`,
+            );
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Failed to read tool result: ${errorMessage}`,
+                },
+              ],
+              details: {
+                error: errorMessage,
+                tool_output_ref,
+              },
+            };
+          }
+        },
+      }),
+      { name: "openviking_tool_result_read" },
+    );
+
     api.registerTool(
       (ctx: ToolContext) => ({
         name: "memory_store",

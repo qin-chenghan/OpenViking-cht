@@ -1367,6 +1367,28 @@ export function createMemoryOpenVikingContextEngine(params: {
                 .trim();
               return { type: "text" as const, text: cleaned };
             } else {
+              // 检查是否是 openviking_tool_result_read 工具
+              const isOpenVikingToolResultRead = part.toolName === "openviking_tool_result_read";
+              const toolInput = part.toolInput as Record<string, unknown> | undefined;
+              
+              // 如果是 openviking_tool_result_read，提取 source-aware metadata
+              let sourceAwareMetadata: Record<string, unknown> = {};
+              if (isOpenVikingToolResultRead && toolInput) {
+                const toolOutputRef = toolInput["tool_output_ref"] as string;
+                const sourceOffset = toolInput["offset"] as number;
+                const sourceLimit = toolInput["limit"] as number;
+                
+                if (typeof toolOutputRef === "string") {
+                  sourceAwareMetadata = {
+                    tool_output_ref: toolOutputRef,
+                    tool_output_source_ref: toolOutputRef,
+                    tool_output_source_offset: typeof sourceOffset === "number" ? sourceOffset : 0,
+                    tool_output_source_limit: typeof sourceLimit === "number" ? sourceLimit : -1,
+                    tool_output_externalized_reason: "source_read",
+                  };
+                }
+              }
+              
               return {
                 type: "tool" as const,
                 tool_id: part.toolCallId,
@@ -1374,6 +1396,7 @@ export function createMemoryOpenVikingContextEngine(params: {
                 tool_input: part.toolInput,
                 tool_output: part.toolOutput,
                 tool_status: part.toolStatus,
+                ...sourceAwareMetadata,
               };
             }
           });
