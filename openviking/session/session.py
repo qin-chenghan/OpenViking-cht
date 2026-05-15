@@ -512,7 +512,10 @@ class Session:
             return False
         tool_input = part.tool_input if isinstance(part.tool_input, dict) else {}
         source_ref = str(
-            tool_input.get("tool_output_ref") or tool_input.get("ref") or tool_input.get("uri") or ""
+            tool_input.get("tool_output_ref")
+            or tool_input.get("ref")
+            or tool_input.get("uri")
+            or ""
         )
         if not source_ref.startswith(f"{self._session_uri}/tool-results/"):
             return False
@@ -669,8 +672,7 @@ class Session:
             reverse=True,
         )
         while (
-            projected_inline_chars(selected) > cfg.assistant_turn_inline_budget_chars
-            and remaining
+            projected_inline_chars(selected) > cfg.assistant_turn_inline_budget_chars and remaining
         ):
             selected.add(remaining.pop(0))
 

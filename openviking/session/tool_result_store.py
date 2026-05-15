@@ -13,7 +13,6 @@ from typing import Any, Dict, List, Optional
 from openviking.storage.viking_fs import VikingFS
 from openviking_cli.exceptions import InvalidArgumentError, NotFoundError
 
-
 _SAFE_ID_RE = re.compile(r"[^A-Za-z0-9_.-]+")
 
 

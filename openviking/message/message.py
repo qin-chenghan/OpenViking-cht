@@ -194,9 +194,7 @@ class Message:
                         tool_output_externalized_reason=p.get(
                             "tool_output_externalized_reason", ""
                         ),
-                        tool_output_group_original_chars=p.get(
-                            "tool_output_group_original_chars"
-                        ),
+                        tool_output_group_original_chars=p.get("tool_output_group_original_chars"),
                         tool_output_group_budget_chars=p.get("tool_output_group_budget_chars"),
                     )
                 )
