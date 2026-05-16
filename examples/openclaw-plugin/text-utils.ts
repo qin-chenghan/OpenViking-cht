@@ -435,7 +435,12 @@ export function extractNewTurnMessages(
         for (const block of content) {
           const b = block as Record<string, unknown>;
           const blockType = b?.type as string;
-          if (blockType === "toolCall" || blockType === "tool_use" || blockType === "tool_call") {
+          if (
+            blockType === "toolCall" ||
+            blockType === "toolUse" ||
+            blockType === "tool_use" ||
+            blockType === "tool_call"
+          ) {
             const name = b?.name as string || b?.toolName as string;
             if (name && typeof name === "string" && name.trim()) {
               toolNames.push(name.trim());
