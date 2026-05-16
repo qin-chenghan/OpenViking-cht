@@ -1120,10 +1120,6 @@ const contextEnginePlugin = {
       { name: "memory_recall" },
     );
 
-    // TODO: 实现工具执行逻辑
-    // - 解析 tool_output_ref URI 格式
-    // - 调用 OpenViking HTTP API 读取完整内容
-    // - 处理错误情况（无效 ref、API 错误等）
     api.registerTool(
       (ctx: ToolContext) => ({
         name: "openviking_tool_result_read",

@@ -891,3 +891,166 @@ describe("Tool: memory_forget (error paths)", () => {
     expect(result.details.error).toBe("missing_param");
   });
 });
+
+describe("Tool: openviking_tool_result_read (registration)", () => {
+  it("registers with correct name and description", () => {
+    const { tools, api } = setupPlugin();
+    contextEnginePlugin.register(api as any);
+    const tool = tools.get("openviking_tool_result_read");
+    expect(tool).toBeDefined();
+    expect(tool!.name).toBe("openviking_tool_result_read");
+    expect(tool!.description).toContain("读取被 OpenViking externalized 的 tool result 完整内容");
+    expect(tool!.description).toContain("externalized");
+  });
+
+  it("registers with tool_output_ref, offset, limit parameters", () => {
+    const { tools, api } = setupPlugin();
+    contextEnginePlugin.register(api as any);
+    const tool = tools.get("openviking_tool_result_read");
+    expect(tool).toBeDefined();
+    const schema = tool!.parameters as Record<string, unknown>;
+    const props = (schema as any).properties;
+    expect(props).toHaveProperty("tool_output_ref");
+    expect(props).toHaveProperty("offset");
+    expect(props).toHaveProperty("limit");
+    expect((props.tool_output_ref as any).type).toBe("string");
+    expect((props.offset as any).type).toBe("number");
+    expect((props.limit as any).type).toBe("number");
+  });
+
+  it("offset and limit are optional parameters", () => {
+    const { tools, api } = setupPlugin();
+    contextEnginePlugin.register(api as any);
+    const tool = tools.get("openviking_tool_result_read");
+    expect(tool).toBeDefined();
+    const schema = tool!.parameters as Record<string, unknown>;
+    const props = (schema as any).properties;
+    expect((props.offset as any).description).toContain("起始偏移量");
+    expect((props.limit as any).description).toContain("最大字符数");
+  });
+});
+
+describe("Tool: openviking_tool_result_read (URI parsing)", () => {
+  function parseToolOutputRef(ref: string): { sessionId: string; toolResultId: string } | null {
+    const match = ref.match(/^viking:\/\/session\/([^/]+)\/tool-results\/([^/]+)$/);
+    if (!match) return null;
+    return { sessionId: match[1], toolResultId: match[2] };
+  }
+
+  it("parses valid URI correctly", () => {
+    const result = parseToolOutputRef("viking://session/session-123/tool-results/tr_tool-abc123");
+    expect(result).not.toBeNull();
+    expect(result!.sessionId).toBe("session-123");
+    expect(result!.toolResultId).toBe("tr_tool-abc123");
+  });
+
+  it("parses URI with complex session ID", () => {
+    const result = parseToolOutputRef("viking://session/bench-quick-1778245748-4-test6-6llm/tool-results/tr_read_file_4d59c1e82bda0ea5");
+    expect(result).not.toBeNull();
+    expect(result!.sessionId).toBe("bench-quick-1778245748-4-test6-6llm");
+    expect(result!.toolResultId).toBe("tr_read_file_4d59c1e82bda0ea5");
+  });
+
+  it("rejects invalid URI format - missing scheme", () => {
+    const result = parseToolOutputRef("session/session-123/tool-results/tr_tool-abc123");
+    expect(result).toBeNull();
+  });
+
+  it("rejects invalid URI format - wrong scheme", () => {
+    const result = parseToolOutputRef("http://session/session-123/tool-results/tr_tool-abc123");
+    expect(result).toBeNull();
+  });
+
+  it("rejects invalid URI format - missing tool-results", () => {
+    const result = parseToolOutputRef("viking://session/session-123/tr_tool-abc123");
+    expect(result).toBeNull();
+  });
+
+  it("rejects invalid URI format - empty string", () => {
+    const result = parseToolOutputRef("");
+    expect(result).toBeNull();
+  });
+
+  it("rejects invalid URI format - missing tool result id", () => {
+    const result = parseToolOutputRef("viking://session/session-123/tool-results/");
+    expect(result).toBeNull();
+  });
+
+  it("rejects invalid URI format - extra path segments", () => {
+    const result = parseToolOutputRef("viking://session/session-123/tool-results/tr_tool-abc123/extra");
+    expect(result).toBeNull();
+  });
+});
+
+describe("Tool: openviking_tool_result_read (error handling)", () => {
+  it("returns error for invalid tool_output_ref format", async () => {
+    const { tools, api } = setupPlugin({
+      readToolResult: vi.fn().mockResolvedValue({
+        tool_result_id: "tr_test",
+        content: "test content",
+        offset: 0,
+        limit: -1,
+        offset_unit: "unicode_code_point" as const,
+        total_chars: 12,
+        has_more: false,
+      }),
+    });
+    contextEnginePlugin.register(api as any);
+    const tool = tools.get("openviking_tool_result_read");
+    expect(tool).toBeDefined();
+
+    const result = await tool!.execute("tc1", {
+      tool_output_ref: "invalid-uri-format",
+    }) as ToolResult;
+
+    expect(result.content[0]!.text).toContain("Invalid tool_output_ref format");
+    expect(result.content[0]!.text).toContain("Expected format");
+    expect(result.content[0]!.text).toContain("viking://session/{session_id}/tool-results/{tool_result_id}");
+  });
+
+  it("returns error for missing tool_output_ref parameter", async () => {
+    const { tools, api } = setupPlugin({
+      readToolResult: vi.fn().mockResolvedValue({
+        tool_result_id: "tr_test",
+        content: "test content",
+        offset: 0,
+        limit: -1,
+        offset_unit: "unicode_code_point" as const,
+        total_chars: 12,
+        has_more: false,
+      }),
+    });
+    contextEnginePlugin.register(api as any);
+    const tool = tools.get("openviking_tool_result_read");
+    expect(tool).toBeDefined();
+
+    const result = await tool!.execute("tc1", {
+      tool_output_ref: undefined,
+    }) as ToolResult;
+
+    expect(result.content[0]!.text).toContain("Invalid tool_output_ref format");
+  });
+
+  it("returns error for wrong scheme", async () => {
+    const { tools, api } = setupPlugin({
+      readToolResult: vi.fn().mockResolvedValue({
+        tool_result_id: "tr_test",
+        content: "test content",
+        offset: 0,
+        limit: -1,
+        offset_unit: "unicode_code_point" as const,
+        total_chars: 12,
+        has_more: false,
+      }),
+    });
+    contextEnginePlugin.register(api as any);
+    const tool = tools.get("openviking_tool_result_read");
+    expect(tool).toBeDefined();
+
+    const result = await tool!.execute("tc1", {
+      tool_output_ref: "http://session/session-123/tool-results/tr_tool-abc123",
+    }) as ToolResult;
+
+    expect(result.content[0]!.text).toContain("Invalid tool_output_ref format");
+  });
+});
