@@ -118,6 +118,43 @@ async def test_read_back_tool_result_reuses_source_ref(session: Session):
     assert read_part.tool_output_externalized_reason == "source_read"
 
 
+async def test_read_back_tool_result_preview_honors_min_preview_chars(session: Session):
+    session._tool_output_externalization_config = _small_config(
+        preview_chars=4,
+        min_preview_chars=12,
+    )
+    raw = "source-" * 20
+    original = session.add_message(
+        "user",
+        [
+            ToolPart(
+                tool_id="call_src_min_preview",
+                tool_name="read_file",
+                tool_output=raw,
+                tool_status="completed",
+            )
+        ],
+    ).get_tool_parts()[0]
+
+    read_msg = session.add_message(
+        "user",
+        [
+            ToolPart(
+                tool_id="call_read_min_preview",
+                tool_name="openviking_tool_result_read",
+                tool_input={"tool_output_ref": original.tool_output_ref},
+                tool_output="abcdefghij" * 4,
+                tool_status="completed",
+            )
+        ],
+    )
+
+    read_part = read_msg.get_tool_parts()[0]
+    assert "preview_chars: 12" in read_part.tool_output
+    assert "abcdef" in read_part.tool_output
+    assert "efghij" in read_part.tool_output
+
+
 async def test_update_tool_part_externalizes_large_output(session_with_tool_call):
     session, message_id, tool_id = session_with_tool_call
     session._tool_output_externalization_config = _small_config()

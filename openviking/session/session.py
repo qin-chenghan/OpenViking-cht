@@ -521,7 +521,7 @@ class Session:
             return False
 
         output = part.tool_output or ""
-        preview_chars = min(cfg.preview_chars, max(cfg.min_preview_chars, cfg.preview_chars))
+        preview_chars = max(cfg.min_preview_chars, cfg.preview_chars)
         preview = make_preview(
             output,
             preview_chars=preview_chars,
