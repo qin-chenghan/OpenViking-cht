@@ -1363,13 +1363,33 @@ export function createMemoryOpenVikingContextEngine(params: {
                 .trim();
               return { type: "text" as const, text: cleaned };
             } else {
+              // openviking_tool_result_read: 发送占位符代替完整内容
+              // 内容已在服务端 externalized，无需重复传输
+              const isSourceRead = part.toolName === "openviking_tool_result_read";
+              const toolInput = part.toolInput as Record<string, unknown> | undefined;
+              const sourceRef = isSourceRead && toolInput
+                ? String(toolInput.tool_output_ref ?? toolInput.ref ?? toolInput.uri ?? "")
+                : "";
+
+              const sourceAware: Record<string, unknown> = {};
+              if (isSourceRead && sourceRef) {
+                sourceAware.tool_output_ref = sourceRef;
+                sourceAware.tool_output_source_ref = sourceRef;
+                sourceAware.tool_output_source_offset = typeof toolInput!.offset === "number" ? toolInput!.offset : 0;
+                sourceAware.tool_output_source_limit = typeof toolInput!.limit === "number" ? toolInput!.limit : -1;
+                sourceAware.tool_output_externalized_reason = "source_read";
+              }
+
               return {
                 type: "tool" as const,
                 tool_id: part.toolCallId,
                 tool_name: part.toolName,
                 tool_input: part.toolInput,
-                tool_output: part.toolOutput,
+                tool_output: isSourceRead && sourceRef
+                  ? `[from: ${sourceRef}]`
+                  : part.toolOutput,
                 tool_status: part.toolStatus,
+                ...sourceAware,
               };
             }
           });
