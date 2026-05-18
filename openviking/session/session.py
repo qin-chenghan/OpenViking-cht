@@ -503,13 +503,21 @@ class Session:
             for part in msg.parts:
                 if not isinstance(part, ToolPart):
                     continue
-                if not (part.tool_output_truncated and part.tool_output_ref):
+                if not part.tool_output_ref:
+                    continue
+                if not (part.tool_output_truncated or part.tool_output_source_ref):
                     continue
 
                 ref = part.tool_output_source_ref or part.tool_output_ref
                 tool_result_id = ref.rstrip("/").split("/")[-1]
                 offset = part.tool_output_source_offset if part.tool_output_source_ref else 0
                 limit = part.tool_output_source_limit if part.tool_output_source_ref else -1
+                if (
+                    part.tool_output_source_ref
+                    and limit is None
+                    and part.tool_output_original_chars is not None
+                ):
+                    limit = part.tool_output_original_chars
                 try:
                     result = await store.read(
                         tool_result_id,

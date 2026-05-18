@@ -180,6 +180,7 @@ async def test_read_back_tool_result_reuses_source_ref(session: Session):
     assert read_part.tool_output_source_offset == 0
     assert read_part.tool_output_source_limit == 50
     assert read_part.tool_output_externalized_reason == "source_read"
+    assert read_part.tool_output_truncated is False
 
     hydrated = await session._hydrate_tool_outputs_for_extraction([read_msg])
     assert hydrated[0].get_tool_parts()[0].tool_output == raw[:50]
