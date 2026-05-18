@@ -489,6 +489,49 @@ class Session:
             return None
         return ToolResultStore(self._viking_fs, self._session_uri, self.session_id, self.ctx)
 
+    async def _hydrate_tool_outputs_for_extraction(
+        self,
+        messages: List[Message],
+    ) -> List[Message]:
+        """Return a memory-only copy with externalized tool outputs restored."""
+        hydrated = [Message.from_dict(m.to_dict()) for m in messages]
+        store = self._tool_result_store()
+        if not store:
+            return hydrated
+
+        for msg in hydrated:
+            for part in msg.parts:
+                if not isinstance(part, ToolPart):
+                    continue
+                if not (part.tool_output_truncated and part.tool_output_ref):
+                    continue
+
+                ref = part.tool_output_source_ref or part.tool_output_ref
+                tool_result_id = ref.rstrip("/").split("/")[-1]
+                offset = part.tool_output_source_offset if part.tool_output_source_ref else 0
+                limit = part.tool_output_source_limit if part.tool_output_source_ref else -1
+                try:
+                    result = await store.read(
+                        tool_result_id,
+                        offset=max(0, int(offset or 0)),
+                        limit=int(limit) if limit is not None else -1,
+                        include_metadata=False,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to hydrate externalized tool output for extraction: "
+                        "session=%s message_id=%s tool_id=%s ref=%s error=%s",
+                        self.session_id,
+                        msg.id,
+                        part.tool_id,
+                        ref,
+                        exc,
+                    )
+                    continue
+                part.tool_output = result.get("content", "")
+
+        return hydrated
+
     def _effective_tool_preview_chars(
         self,
         cfg: ToolOutputExternalizationConfig,
@@ -1122,10 +1165,11 @@ class Session:
                     latest_archive_overview = await self._get_latest_completed_archive_overview(
                         exclude_archive_uri=archive_uri
                     )
+                    extraction_messages = await self._hydrate_tool_outputs_for_extraction(messages)
 
                     async def _run_archive_summary() -> None:
                         summary = await self._generate_archive_summary_async(
-                            messages,
+                            extraction_messages,
                             latest_archive_overview=latest_archive_overview,
                         )
                         if self._viking_fs and summary:
@@ -1168,7 +1212,7 @@ class Session:
                         _results = await asyncio.gather(
                             _run_archive_summary(),
                             self._session_compressor.extract_long_term_memories(
-                                messages=messages,
+                                messages=extraction_messages,
                                 user=self.user,
                                 session_id=self.session_id,
                                 ctx=self.ctx,
@@ -1176,7 +1220,7 @@ class Session:
                                 archive_uri=archive_uri,
                             ),
                             self._session_compressor.extract_agent_memories(
-                                messages=messages,
+                                messages=extraction_messages,
                                 ctx=self.ctx,
                             )
                             if has_agent_memory

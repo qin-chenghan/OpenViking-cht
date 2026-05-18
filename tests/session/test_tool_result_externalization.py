@@ -50,6 +50,33 @@ async def test_add_message_externalizes_large_tool_output(session: Session):
     assert stored["offset_unit"] == "unicode_code_point"
 
 
+async def test_hydrate_tool_outputs_for_extraction_uses_memory_copy(session: Session):
+    session._tool_output_externalization_config = _small_config()
+    raw = "alpha-" * 20
+
+    msg = session.add_message(
+        "user",
+        [
+            ToolPart(
+                tool_id="call_hydrate",
+                tool_name="read_file",
+                tool_output=raw,
+                tool_status="completed",
+            )
+        ],
+    )
+    compressed_part = msg.get_tool_parts()[0]
+    compressed_output = compressed_part.tool_output
+
+    hydrated = await session._hydrate_tool_outputs_for_extraction([msg])
+
+    assert hydrated[0] is not msg
+    assert hydrated[0].get_tool_parts()[0].tool_output == raw
+    assert hydrated[0].get_tool_parts()[0].tool_output_ref == compressed_part.tool_output_ref
+    assert compressed_part.tool_output == compressed_output
+    assert raw not in compressed_part.tool_output
+
+
 async def test_assistant_turn_budget_splits_aggregate_and_externalizes_largest_output(
     session: Session,
 ):
@@ -153,6 +180,9 @@ async def test_read_back_tool_result_reuses_source_ref(session: Session):
     assert read_part.tool_output_source_offset == 0
     assert read_part.tool_output_source_limit == 50
     assert read_part.tool_output_externalized_reason == "source_read"
+
+    hydrated = await session._hydrate_tool_outputs_for_extraction([read_msg])
+    assert hydrated[0].get_tool_parts()[0].tool_output == raw[:50]
 
 
 async def test_read_back_tool_result_preview_honors_min_preview_chars(session: Session):
