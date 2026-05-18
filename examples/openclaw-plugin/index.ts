@@ -1603,9 +1603,12 @@ const contextEnginePlugin = {
         name: "openviking_tool_result_read",
         label: "Tool Result Read (OpenViking)",
         description:
-          "Read a chunk of an externalized OpenViking tool result. Use when a tool result preview contains a " +
-          "[tool-result-ref] or viking://session/.../tool-results/... URI and you need the original content. " +
-          "Read in bounded chunks with offset and limit instead of requesting the whole result at once.",
+          "Restore the full original content of a tool result that was externalized by OpenViking. " +
+          "Use when a previous tool result was externalized and only a preview is visible — " +
+          "the preview contains a [tool-result-ref] or viking://session/.../tool-results/... URI. " +
+          "\"Read\" tool returns the same truncated preview; this tool returns the complete content. " +
+          "To read all content: pass offset=0 and a limit large enough to cover the whole result " +
+          "(e.g. limit=100000). Use offset/limit for paging only when you need a specific section.",
         parameters: Type.Object({
           tool_output_ref: Type.String({
             description:
@@ -1697,8 +1700,10 @@ const contextEnginePlugin = {
         name: "openviking_tool_result_search",
         label: "Tool Result Search (OpenViking)",
         description:
-          "Search inside an externalized OpenViking tool result by keyword. Use before reading large results " +
-          "when you need to locate relevant offsets or snippets.",
+          "Search inside an externalized tool result for a keyword. " +
+          "Use when you need to find specific content in a large externalized result, " +
+          "before reading it with openviking_tool_result_read. " +
+          "Returns matching snippets with their character offsets.",
         parameters: Type.Object({
           tool_output_ref: Type.String({
             description:
@@ -1799,8 +1804,9 @@ const contextEnginePlugin = {
         name: "openviking_tool_result_list",
         label: "Tool Result List (OpenViking)",
         description:
-          "List externalized OpenViking tool results for the current session. Use to find available tool result refs " +
-          "before reading or searching them.",
+          "List externalized tool results for the current session. " +
+          "Use to discover available refs before calling openviking_tool_result_read. " +
+          "Optionally filter by tool_name to narrow down results.",
         parameters: Type.Object({
           tool_name: Type.Optional(Type.String({ description: "Optional exact tool name filter" })),
           limit: Type.Optional(Type.Number({ description: "Maximum results. Default: 50" })),
