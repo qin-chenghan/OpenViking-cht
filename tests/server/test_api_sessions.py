@@ -332,6 +332,39 @@ async def test_add_message(client: httpx.AsyncClient):
     assert body["result"]["message_count"] == 1
 
 
+async def test_add_message_splits_tool_result_aggregate(client: httpx.AsyncClient):
+    create_resp = await client.post("/api/v1/sessions", json={})
+    session_id = create_resp.json()["result"]["session_id"]
+
+    resp = await client.post(
+        f"/api/v1/sessions/{session_id}/messages",
+        json=_message_request(
+            "user",
+            parts=[
+                {
+                    "type": "tool",
+                    "tool_id": "call_a",
+                    "tool_name": "tool_a",
+                    "tool_output": "a",
+                    "tool_status": "completed",
+                },
+                {
+                    "type": "tool",
+                    "tool_id": "call_b",
+                    "tool_name": "tool_b",
+                    "tool_output": "b",
+                    "tool_status": "completed",
+                },
+            ],
+        ),
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["result"]["message_count"] == 2
+
+
 async def test_add_message_root_request_autofills_role_id(service, monkeypatch):
     session_id = "root-auto-fill"
     ctx = RequestContext(user=DEFAULT_USER, role=Role.ROOT)

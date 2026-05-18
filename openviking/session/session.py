@@ -624,21 +624,26 @@ class Session:
         part.tool_output_group_original_chars = group_original_chars
         part.tool_output_group_budget_chars = cfg.assistant_turn_inline_budget_chars
 
-    def _externalize_large_tool_outputs(self, msg: Message) -> None:
+    def _externalize_large_tool_output_group(self, messages: List[Message]) -> None:
         cfg = self._tool_output_externalization_config
         if not cfg.enabled:
             return
 
-        tool_parts = [p for p in msg.parts if isinstance(p, ToolPart) and (p.tool_output or "")]
+        tool_parts = [
+            (msg, p)
+            for msg in messages
+            for p in msg.parts
+            if isinstance(p, ToolPart) and (p.tool_output or "")
+        ]
         if not tool_parts:
             return
 
-        group_id = msg.id
-        group_original_chars = sum(len(p.tool_output or "") for p in tool_parts)
+        group_id = messages[0].id
+        group_original_chars = sum(len(p.tool_output or "") for _, p in tool_parts)
         normal_indices: List[int] = []
         selected: set[int] = set()
 
-        for idx, part in enumerate(tool_parts):
+        for idx, (_msg, part) in enumerate(tool_parts):
             part.tool_output_group_id = group_id
             part.tool_output_group_original_chars = group_original_chars
             part.tool_output_group_budget_chars = cfg.assistant_turn_inline_budget_chars
@@ -658,7 +663,7 @@ class Session:
         def projected_inline_chars(selected_indices: set[int]) -> int:
             preview_chars = self._effective_tool_preview_chars(cfg, len(selected_indices))
             total = 0
-            for idx, part in enumerate(tool_parts):
+            for idx, (_, part) in enumerate(tool_parts):
                 output_len = len(part.tool_output or "")
                 if idx in selected_indices:
                     total += min(output_len, preview_chars)
@@ -668,7 +673,7 @@ class Session:
 
         remaining = sorted(
             [idx for idx in normal_indices if idx not in selected],
-            key=lambda idx: len(tool_parts[idx].tool_output or ""),
+            key=lambda idx: len(tool_parts[idx][1].tool_output or ""),
             reverse=True,
         )
         while (
@@ -678,14 +683,15 @@ class Session:
 
         preview_chars = self._effective_tool_preview_chars(cfg, len(selected))
         for idx in sorted(selected):
+            msg, part = tool_parts[idx]
             reason = (
                 "single_threshold"
-                if len(tool_parts[idx].tool_output or "") > cfg.threshold_chars
+                if len(part.tool_output or "") > cfg.threshold_chars
                 else "turn_budget"
             )
             self._externalize_tool_part(
                 msg,
-                tool_parts[idx],
+                part,
                 cfg,
                 preview_chars=preview_chars,
                 reason=reason,
@@ -693,27 +699,20 @@ class Session:
                 group_original_chars=group_original_chars,
             )
 
-    def add_message(
-        self,
-        role: str,
-        parts: List[Part],
-        role_id: Optional[str] = None,
-        created_at: str = None,
-    ) -> Message:
-        """Add a message."""
-        msg = Message(
-            id=f"msg_{uuid4().hex}",
-            role=role,
-            parts=parts,
-            role_id=role_id,
-            created_at=created_at or datetime.now(timezone.utc).isoformat(),
+    def _externalize_large_tool_outputs(self, msg: Message) -> None:
+        self._externalize_large_tool_output_group([msg])
+
+    def _is_tool_result_aggregate(self, role: str, parts: List[Part]) -> bool:
+        return (
+            role == "user" and len(parts) > 1 and all(isinstance(part, ToolPart) for part in parts)
         )
-        self._externalize_large_tool_outputs(msg)
+
+    def _append_message(self, msg: Message) -> None:
         self._messages.append(msg)
         self._record_participant(msg)
 
         # Update statistics
-        if role == "user":
+        if msg.role == "user":
             self._stats.total_turns += 1
         msg_tokens = int(msg.estimated_tokens or 0)
         self._stats.total_tokens += msg_tokens
@@ -736,6 +735,45 @@ class Session:
         if self._meta.total_message_count is not None:
             self._meta.total_message_count += 1
         self._save_meta_sync()
+
+    def add_message(
+        self,
+        role: str,
+        parts: List[Part],
+        role_id: Optional[str] = None,
+        created_at: str = None,
+    ) -> Message:
+        """Add a message.
+
+        A user message containing only multiple tool results is treated as a
+        transport aggregate and stored as one message per tool result.
+        """
+        created = created_at or datetime.now(timezone.utc).isoformat()
+        if self._is_tool_result_aggregate(role, parts):
+            messages = [
+                Message(
+                    id=f"msg_{uuid4().hex}",
+                    role=role,
+                    parts=[part],
+                    role_id=role_id,
+                    created_at=created,
+                )
+                for part in parts
+            ]
+            self._externalize_large_tool_output_group(messages)
+            for msg in messages:
+                self._append_message(msg)
+            return messages[0]
+
+        msg = Message(
+            id=f"msg_{uuid4().hex}",
+            role=role,
+            parts=parts,
+            role_id=role_id,
+            created_at=created,
+        )
+        self._externalize_large_tool_outputs(msg)
+        self._append_message(msg)
         return msg
 
     def _record_participant(self, msg: Message) -> None:

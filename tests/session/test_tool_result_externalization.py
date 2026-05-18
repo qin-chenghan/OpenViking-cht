@@ -50,13 +50,16 @@ async def test_add_message_externalizes_large_tool_output(session: Session):
     assert stored["offset_unit"] == "unicode_code_point"
 
 
-async def test_assistant_turn_budget_externalizes_largest_medium_output(session: Session):
+async def test_assistant_turn_budget_splits_aggregate_and_externalizes_largest_output(
+    session: Session,
+):
     session._tool_output_externalization_config = _small_config(
         threshold_chars=100,
         assistant_turn_inline_budget_chars=25,
     )
 
-    msg = session.add_message(
+    start_count = len(session.messages)
+    returned = session.add_message(
         "user",
         [
             ToolPart(
@@ -74,12 +77,46 @@ async def test_assistant_turn_budget_externalizes_largest_medium_output(session:
         ],
     )
 
-    parts = msg.get_tool_parts()
+    new_messages = session.messages[start_count:]
+    assert len(new_messages) == 2
+    assert returned == new_messages[0]
+    assert [len(msg.parts) for msg in new_messages] == [1, 1]
+
+    parts = [msg.get_tool_parts()[0] for msg in new_messages]
     externalized = [p for p in parts if p.tool_output_truncated]
     assert len(externalized) == 1
     assert externalized[0].tool_id == "call_a"
     assert externalized[0].tool_output_externalized_reason == "turn_budget"
     assert all(p.tool_output_group_original_chars == 30 for p in parts)
+    assert parts[0].tool_output_group_id == parts[1].tool_output_group_id
+
+
+async def test_tool_result_aggregate_splits_when_externalization_disabled(session: Session):
+    session._tool_output_externalization_config = _small_config(enabled=False)
+    start_count = len(session.messages)
+
+    session.add_message(
+        "user",
+        [
+            ToolPart(
+                tool_id="call_a",
+                tool_name="tool_a",
+                tool_output="a",
+                tool_status="completed",
+            ),
+            ToolPart(
+                tool_id="call_b",
+                tool_name="tool_b",
+                tool_output="b",
+                tool_status="completed",
+            ),
+        ],
+    )
+
+    new_messages = session.messages[start_count:]
+    assert len(new_messages) == 2
+    assert [msg.get_tool_parts()[0].tool_id for msg in new_messages] == ["call_a", "call_b"]
+    assert all(msg.get_tool_parts()[0].tool_output_truncated is False for msg in new_messages)
 
 
 async def test_read_back_tool_result_reuses_source_ref(session: Session):
