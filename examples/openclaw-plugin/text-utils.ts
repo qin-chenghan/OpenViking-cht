@@ -427,11 +427,17 @@ export function extractNewTurnMessages(
         });
       }
     } else {
-      /// 如果原始消息有 toolCall，提取所有工具名并生成占位符
+      /// 如果原始消息有 toolCall，提取完整的工具调用信息
       if (role === "assistant" && Array.isArray(content)) {
-        const toolNames: string[] = [];
+        const toolParts: Array<{
+          type: "tool";
+          toolCallId: string;
+          toolName: string;
+          toolInput?: Record<string, unknown>;
+          toolOutput: string;
+          toolStatus: string;
+        }> = [];
         
-        // 收集所有 toolCall 的 tool_name
         for (const block of content) {
           const b = block as Record<string, unknown>;
           const blockType = b?.type as string;
@@ -441,22 +447,26 @@ export function extractNewTurnMessages(
             blockType === "tool_use" ||
             blockType === "tool_call"
           ) {
-            const name = b?.name as string || b?.toolName as string;
-            if (name && typeof name === "string" && name.trim()) {
-              toolNames.push(name.trim());
+            const id = (b?.id as string) || (b?.toolUseId as string) || (b?.toolCallId as string) || "";
+            const name = (b?.name as string) || (b?.toolName as string) || "";
+            if (id && name && typeof id === "string" && typeof name === "string" && name.trim()) {
+              toolParts.push({
+                type: "tool",
+                toolCallId: id,
+                toolName: name.trim(),
+                toolInput: (b?.arguments ?? b?.input ?? {}) as Record<string, unknown>,
+                toolOutput: "",
+                toolStatus: "placeholder",
+              });
             }
           }
         }
         
-        // 只有找到 toolCall 时才添加占位符
-        if (toolNames.length > 0) {
-          const toolNamesStr = toolNames.join(", ");
+        // 只有找到 toolCall 时才添加占位符消息
+        if (toolParts.length > 0) {
           result.push({
             role: "assistant",
-            parts: [{
-              type: "text",
-              text: `[tool: ${toolNamesStr}]`,
-            }],
+            parts: toolParts,
           });
         }
       }

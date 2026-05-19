@@ -409,6 +409,7 @@ export function convertToAgentMessages(msg: { role: string; parts: unknown[] }):
       const originalChars = typeof p.tool_output_original_chars === "number"
         ? p.tool_output_original_chars
         : undefined;
+      const isPlaceholder = status === "placeholder";
 
       if (toolId) {
         // Structured path: emit canonical toolCall + toolResult pair (works for any role)
@@ -418,6 +419,11 @@ export function convertToAgentMessages(msg: { role: string; parts: unknown[] }):
           name: toolName ?? "unknown",
           arguments: p.tool_input ?? {},
         });
+
+        if (isPlaceholder) {
+          // 占位符 tool call：只生成 toolCall block，不生成 toolResult
+          continue;
+        }
 
         let resultText = (status === "completed" || status === "error")
           ? (output || "(no output)")
@@ -474,7 +480,7 @@ export function convertToAgentMessages(msg: { role: string; parts: unknown[] }):
       result.push({ role: msg.role, content: "" });
     }
     if (toolCallBlocks.length > 0) {
-      result.push({ role: "assistant", content: toolCallBlocks });
+      // result.push({ role: "assistant", content: toolCallBlocks });
       result.push(...toolResults);
     }
   }
@@ -1368,8 +1374,8 @@ export function createMemoryOpenVikingContextEngine(params: {
                 tool_id: part.toolCallId,
                 tool_name: part.toolName,
                 tool_input: part.toolInput,
-                tool_output: part.toolOutput,
-                tool_status: part.toolStatus,
+                tool_output: part.toolOutput ?? "",
+                tool_status: part.toolStatus ?? "placeholder",
               };
             }
           });
